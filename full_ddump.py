@@ -196,30 +196,36 @@ def openscad_base():
 	basetxt = '''include <font_base.scad>'''
 	return basetxt.strip()
 
-def make_openscad_polygon(tabs,points,height):
-	s='translate([0,0,-' + str(height) + '/2]) '
-	s+= tabs+'linear_extrude(height='+str(height)+') polygon( points=[' +os.linesep
-	#s+= tabs+'polygon( points=[' +os.linesep
+def make_openscad_polygon(tabs,points):
+	s='translate([0,0,-height/2]) {'
+	s+= 'if(height == 0) {'
+	polygon = 'polygon( points=[' +os.linesep
 	for i in range(0,len(points)-2,3):
-		s+=tabs+'\t'
-		s+=scad_format(points[i])+', '
-		s+=scad_format(points[i+1])+', '
-		s+=scad_format(points[i+2])+', '
-		s+=os.linesep
-	s+=tabs+'\t'
+		polygon+=tabs+'\t'
+		polygon+=scad_format(points[i])+', '
+		polygon+=scad_format(points[i+1])+', '
+		polygon+=scad_format(points[i+2])+', '
+		polygon+=os.linesep
+	polygon+=tabs+'\t'
 	for j in range(i+3,len(points)):
-		s+=scad_format(points[j])+','
-	s=s.rstrip(os.linesep)
-	s+= ' ]);' + os.linesep
+		polygon+=scad_format(points[j])+','
+	polygon=polygon.rstrip(os.linesep)
+	polygon+= ' ]);' + os.linesep
+	s+= polygon
+	s+= '}'
+	s+= 'else {'
+	s+= tabs+'linear_extrude(height=height) ' + polygon
+	s+= '}'
+	s+= '}'
 	return s
 
-def make_openscad_curves(tabs,curves,height):
-	s='translate([0,0,-' + str(height) + '/2]){ '+os.linesep
+def make_openscad_curves(tabs,curves):
+	s='translate([0,0,-height/2]){ '+os.linesep
 	for curve in curves:
 		triplet = str(curve).strip('[').strip(']')
 		s+= tabs+'BezConic('
 		s+= scad_format(triplet) 
-		s+= ',steps,'+str(height)+');' + os.linesep
+		s+= ',steps,height);' + os.linesep
 	s+='}'+os.linesep
 	return s
 
@@ -265,10 +271,10 @@ def make_chunks(contours):
 		prev_cw = c.clockwise
 	return chunks
 
-def make_openscad_contour(contour,height):
+def make_openscad_contour(contour):
 	dbg = debug_contour_string = True
-	s='module '+contour.name+'_skeleton() {\n'
-	s+=make_openscad_polygon('\t',contour.points,height)
+	s='module '+contour.name+'_skeleton(height) {\n'
+	s+=make_openscad_polygon('\t',contour.points)
 	s+='}\n\n'
 
 	additive_curves,subtractive_curves =[],[]
@@ -278,21 +284,21 @@ def make_openscad_contour(contour,height):
 		else:
 			subtractive_curves+=[contour.curves[i]]
 
-	s+='module '+contour.name+'_additive_curves(steps=2) {\n'
-	s+=make_openscad_curves('\t',additive_curves,height)
+	s+='module '+contour.name+'_additive_curves(steps=2, height) {\n'
+	s+=make_openscad_curves('\t',additive_curves)
 	s+='}\n\n'
 
-	s+='module '+contour.name+'_subtractive_curves(steps=2) {\n'
-	s+=make_openscad_curves('\t',subtractive_curves,height)
+	s+='module '+contour.name+'_subtractive_curves(steps=2, height) {\n'
+	s+=make_openscad_curves('\t',subtractive_curves)
 	s+='}\n\n'
 
-	s2='''module contourname(steps=2) {
+	s2='''module contourname(steps=2, height) {
 	difference() {
 		union() {
-			contourname_skeleton();
-			contourname_additive_curves(steps);
+			contourname_skeleton(height);
+			contourname_additive_curves(steps, height);
 		}
-		scale([1,1,1.1]) contourname_subtractive_curves(steps);
+		translate([0, 0, -0.1]) scale([1,1,1.1]) contourname_subtractive_curves(steps, height);
 	}
 }
 
@@ -306,7 +312,7 @@ def make_openscad_contour(contour,height):
 	return s
 
 def make_openscad_chunk(chunkname,bodies,holes):
-	s='''module chunkname(steps=2) {
+	s='''module chunkname(steps=2, height) {
 	difference() {
 		///body
 		///holes
@@ -317,22 +323,22 @@ def make_openscad_chunk(chunkname,bodies,holes):
 	s=s.replace('chunkname',chunkname)
 	bs,hs='',''
 	for contour in bodies:
-		bs+=contour.name+'(steps);\n\t'
+		bs+=contour.name+'(steps, height);\n\t'
 	for contour in holes:
-		hs+='scale([1,1,1.1]) '+contour.name+'(steps);\n\t'
+		hs+='translate([0, 0, -0.1]) scale([1,1,1.1]) '+contour.name+'(steps, height);\n\t'
 	s=s.replace('///body',bs.rstrip())
 	s=s.replace('///holes',hs.rstrip())
 	return s
 
 debug_chunks=True
 
-def make_openscad_commands(charcode, module, contours, chunks, bbox,height):
+def make_openscad_commands(charcode, module, contours, chunks, bbox):
 	s=''
 	dbg = debug_chunks
 	dbgs = ''
 
 	for c in contours:
-		s+=make_openscad_contour(c,height)
+		s+=make_openscad_contour(c)
 
 	counter=0
 	for k in chunks.keys():
@@ -344,20 +350,16 @@ def make_openscad_commands(charcode, module, contours, chunks, bbox,height):
 			else: holes+=[contour]
 
 		s+=make_openscad_chunk(chunkname,bodies,holes)
-		#s+=make_openscad_chunk_debug_module(chunkname,bodies,holes)
 
 	s+= module + '_bbox'+charcode+'='+str(bbox)+';\n\n'
 
-	s+= 'module '+ module + '_letter'+charcode+'(detail=2) {'+os.linesep
+	s+= 'module '+ module + '_letter'+charcode+'(steps=2, height) {'+os.linesep
 	for key in chunks.keys():
 		chunkname = module + '_chunk'+str(key)+charcode
-		s+= '\t'+chunkname+'(steps=detail);'+os.linesep
+		s+= '\t'+chunkname+'(steps, height);'+os.linesep
 	s+='} //end skeleton' + os.linesep*2
 	# end composite handling
 
-	#s+='letter();'+os.linesep
-	#s+='letter_debug();'+os.linesep
-	#s+='linear_extrude(height=10) letter();'+os.linesep
 	return dbgs + s
 
 debug_contours=False
@@ -464,7 +466,6 @@ def loadttf(ttf_file,characteri,font_size):
 	slot = face.glyph
 	#print slot.format
 	f = slot.outline.flags 
-	#bbox = [[face.bbox.xMin,face.bbox.yMin],[face.bbox.xMax,face.bbox.yMax]]
 	if debug_freetype_py:
 		print 'flags:', f
 		print 0b11111111 & f
@@ -505,52 +506,97 @@ def loadttf(ttf_file,characteri,font_size):
 	#tags = tags+[tags[0]]+[tags[1]]
 	return points,tags,contourlist,bbox
 
-def create_letter_if(charcode,module,height):
-	if charcode >= 33  and charcode <= 126:
-		out = chr(charcode);
+def create_module(bboxes, module, spacing, space, spacewidth):
+	output = 'function ' + module + '_letter_space(char, extra) =' + os.linesep + '\t'
+	space = bboxes[bboxes.keys()[-1]][1][0] if bboxes[bboxes.keys()[-1]][1][0] > 0 else 30
+	for key in bboxes.keys():
+		out = chr(key);
 		if out == '"' or out == '\\':
 			out = '\\' +  out
-		letter_output = '    if (charcode == "' + hex(charcode) + '" || charcode == ' + str(charcode) + ' || charcode=="' + out + '"){'+os.linesep
-	else:
-		letter_output = '    if (charcode == "' + hex(charcode) + '" || charcode == ' + str(charcode) + '){'+os.linesep
-	letter_output += '        if(center==true){'+os.linesep
-	letter_output += '            translate([-' + module + '_bbox' + hex(charcode) + '[1][0]/2,0,0]) ' + module + '_letter' + hex(charcode) + '(steps);'+os.linesep
-	letter_output += '        }else{'+os.linesep
-	letter_output += '            translate([0,0,' + str(height) + '/2]) ' + module + '_letter' + hex(charcode) + '(steps);'+os.linesep
-	letter_output += '        }'+os.linesep
-	#letter_output += '        for (i = [0 : $children-1])'+os.linesep
-	#letter_output += '            translate([' + module + '_bbox' + hex(charcode) + '[1][0],0,0]) child(0);'+os.linesep
-	letter_output += '    }' + os.linesep
-	return letter_output
-
-def create_string_if(string,bboxes,module,height,spacing,space,spacewidth):
-	string_full_output = '    if(charcode == "' + string + '"){'+os.linesep
-	string_output = ''
-	offset = 0
-	for character in string:
-		if character == ' ':
-			charcodex = ord(space)
-			if spacewidth != -999:
-				offset += spacewidth
-			else:
-				offset += bboxes[charcodex][1][0] + spacing
+		if key != bboxes.keys()[-1]:
+			output += 'char == "' + out + '" ? (' + (str(bboxes[key][1][0] + spacing) if (bboxes[key][1][0] + spacing > 0) else str(space)) + ' + extra) : ' + os.linesep + '\t'
 		else:
-			charcode = ord(character)
-			string_output += '                translate([' + str(offset) + ',0,0]) ' + module + '_letter' + hex(charcode) + '(steps);'+os.linesep
-			offset += bboxes[charcode][1][0] + spacing
-		
-	string_full_output += '        if(center==true){'+os.linesep
-	string_full_output += '            translate([-' + str(offset) + '/2,0,0]){'+os.linesep
-	string_full_output += string_output
-	string_full_output += '            }'+os.linesep
-	string_full_output += '        }else{'+os.linesep
-	string_full_output += '            translate([0,0,' + str(height) + '/2]){'+os.linesep
-	string_full_output += string_output
-	string_full_output += '            }'+os.linesep
-	string_full_output += '        }'+os.linesep
+			output += '(' + str(space) + ' + extra);' + os.linesep + os.linesep
+	output += 'module ' + module + '_letter(char, steps, height) {' + os.linesep
+	for key in bboxes.keys():
+		out = chr(key);
+		if out == '"' or out == '\\':
+			out = '\\' +  out
+		output += '\tif(char == "' + out + '") {' + os.linesep + '\t\t'
+		output += module + '_letter' + hex(key) + '(steps, height);' + os.linesep + '\t'
+		output += '}' + os.linesep
+	output += '}' + os.linesep + os.linesep
+	output += 'module ' + module + '(strArr, steps=2, center=false, extra = 0, height = 10) {' + os.linesep + '\t'
+	output += 'if(center) {' + os.linesep + '\t\t'
+	output += 'translate([-' + module + '_width(strArr, extra)/2, 0, 0])' + os.linesep + '\t\t\t'
+	output += module + '_str(strArr, steps, extra, height);' + os.linesep + '\t'
+	output += '}' + os.linesep + '\t'
+	output += 'else {' + os.linesep + '\t\t'
+	output += module + '_str(strArr, steps, extra, height);' + os.linesep + '\t'
+	output += '}' + os.linesep
+	output += '}' + os.linesep + os.linesep
+	output += 'module ' + module + '_str(strArr, steps=2, extra, height = 10) {' + os.linesep + '\t'
+	output += 'for(i = [0:len(strArr)-1]) {' + os.linesep + '\t\t'
+	output += 'assign(char = strArr[i]) {' + os.linesep + '\t\t\t'
+	for i in range(0, 100):
+		if i != 0:
+			output += 'else '
+		output += 'if(i == ' + repr(i) + ') {' + os.linesep + '\t\t\t\t'
+		output += 'translate(['
+		for j in range(0, i):
+			output += module + '_letter_space(strArr[' + repr(j) + '], extra)'
+			if j < i-1:
+				output += '+'
+		if i == 0:
+			output += '0'
+		output += ', 0, 0])' + os.linesep + '\t\t\t\t\t'
+		output += module + '_letter(char, steps, height);' + os.linesep + '\t\t\t'
+		output += '}' + os.linesep + '\t\t\t'
+	output += '}' + os.linesep + '\t\t'
+	output += '}' + os.linesep + '\t'
+	output += '}' + os.linesep + os.linesep
 	
-	string_full_output += '    }'+os.linesep	
-	return string_full_output
+	output += 'function ' + module + '_width(strArr, extra = 0) =' + os.linesep + '\t'
+	for i in range(0, 100):
+		if i != 0:
+			output += ') : '
+		if i < 100 - 1:
+			output += '(len(strArr) == ' + repr(i) + ') ? '
+		output += '(' + os.linesep + '\t\t'
+		for j in range(0, i):
+			output += module + '_letter_space(strArr[' + repr(j) + '], extra)'
+			if j < i-1:
+				output += '+'
+		if i == 0:
+			output += '0'
+	output += ');' + os.linesep*2
+	return output
+
+def font_base():
+	return """
+module BezConic(p0,p1,p2,steps=5,h=10) {
+
+	stepsize1 = (p1-p0)/steps;
+	stepsize2 = (p2-p1)/steps;
+
+	for (i=[0:steps-1]) {
+		assign(point1 = p0+stepsize1*i) 
+		assign(point2 = p1+stepsize2*i) 
+		assign(point3 = p0+stepsize1*(i+1))
+		assign(point4 = p1+stepsize2*(i+1))
+		assign(bpoint1 = point1+(point2-point1)*(i/steps))
+		assign(bpoint2 = point3+(point4-point3)*((i+1)/steps)) {
+			if(h == 0) {
+				polygon(points=[bpoint1,bpoint2,p1]);
+			}
+			else {
+				linear_extrude(height=h) {
+					polygon(points=[bpoint1,bpoint2,p1]);
+				}
+			}
+		}
+	}
+}"""
 	
 debug = False
 debug_angle = False
@@ -571,7 +617,6 @@ if __name__ == '__main__':
 	parser.add_option('-o','--output', dest='output', default='FreeSerif.scad', help='output file');
 	parser.add_option('-m','--module', dest='module', default='FreeSerif', help='module name');
 	parser.add_option('--strings', dest='stringsfile', default='', help='strings file');
-	parser.add_option('--height', dest='height', default='10', help='height');
 	parser.add_option('--spacing', dest='spacing', default='0', help='height');
 	parser.add_option('--space', dest='space', default='x', help='height');
 	parser.add_option('--spacewidth', dest='spacewidth', default='-999', help='height');
@@ -580,9 +625,6 @@ if __name__ == '__main__':
 
 	output = ''
 	
-	# bezier curve code
-	output+= openscad_base()+os.linesep*2
-	module_output = 'module ' + options.module + '(charcode,center=true, steps=2){'+os.linesep
 	bboxes = {}
 	
 	for i in range(int(options.startcode,16),int(options.endcode,16)+1):
@@ -600,26 +642,16 @@ if __name__ == '__main__':
 				c.curves, c.curvetags = create_curves(c.points, c.tags)
 				c.clockwise = is_clockwise(c)
 			chunks = make_chunks(contours)
-			output += make_openscad_commands(hex(charcode),options.module, contours,chunks,bbox,int(options.height,10))
-			module_output += create_letter_if(charcode,options.module,int(options.height,10))
+			output += make_openscad_commands(hex(charcode),options.module, contours,chunks,bbox)
 
-			print '// unicode:',hex(charcode)#,' render:',unichr(charcode)
+			print '// unicode:',hex(charcode)
 			print '// number of contours:',len(contours)
 			print '// number of chunks:',len(chunks)
 		except IndexError:
 			print '// unable to output character:',hex(charcode)
 
-	if options.stringsfile != '':
-		file = open(options.stringsfile)
-
-		while 1:
-			line = file.readline().rstrip()
-			if not line:
-				break
-			module_output += create_string_if(line,bboxes,options.module,int(options.height,10),int(options.spacing,10),options.space,int(options.spacewidth,10))
-		
-	module_output += '}'
-	output += os.linesep*2 + module_output
+	output += os.linesep*2 + create_module(bboxes, options.module, int(options.spacing, 10), options.space, int(options.spacewidth,10))
+	output += os.linesep*2 + font_base()
 
 	f=open(options.output,'w')
 	f.write(output)
