@@ -1,7 +1,7 @@
 #!/bin/sh
 # googlefontdirectory is a git submodule that needs to be initialized first.
 mkdir -p fonts # make sure output directory exists
-find ./googlefontdirectory/fonts/A*.ttf | awk '{
+find ./googlefontdirectory/fonts/*.ttf | awk '{
   split($1, path, "/")
   split(path[4], fontname, ".")
   name = fontname[1]
