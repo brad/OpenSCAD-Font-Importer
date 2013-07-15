@@ -1,6 +1,7 @@
 #!/bin/sh
-# replace the location in find with the location of your ttfs
-find ../googlefontdirectory/*/*.ttf | awk '{
+# googlefontdirectory is a git submodule that needs to be initialized first.
+mkdir -p fonts # make sure output directory exists
+find ./googlefontdirectory/fonts/A*.ttf | awk '{
   split($1, path, "/")
   split(path[4], fontname, ".")
   name = fontname[1]
