@@ -12,7 +12,7 @@ find ./googlefontdirectory/fonts/*.ttf | awk '{
   system(cmd)
 
   # Uncomment this block to generate *_test.stl and test png files for all fonts. Will take about a day
-  system("echo \"include <fonts/" name ".scad>\n\" > " name "_test.scad")
+  #system("echo \"include <fonts/" name ".scad>\n\" > " name "_test.scad")
   ##system("echo \"" name "(\\\"Grumpy wizards make toxic brew for the evil Queen and Jack.\\\");\" >> " name "_test.scad")
   #system("echo \"text = \\\"" name "\\\";\nwidth = " name "_width(text);\n" name "(text, center = true);\nlinear_extrude(height = 10)\ndifference() {\n\tsquare([width + 10, 0.75 * (width + 10)], center = true);\n\tsquare([width + 10 - 2, 0.75 * (width + 10 - 2)], center = true);\n}\" >> " name "_test.scad")
   #system("openscad -m make " name "_test.scad -o fonts/" name ".stl")
